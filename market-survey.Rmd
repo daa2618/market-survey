@@ -1,0 +1,225 @@
+---
+title: "market-survey"
+author: "Dev"
+date: '2022-10-07'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+
+```{r}
+# loading the required packages
+library(tidyverse) # for data wrangling and visualization
+library(NbClust) # for determining the best number of clusters
+library(janitor) # for tabyl
+library(flexclust)  # for segment profile plot
+
+# reading the data
+Office <- read.csv("office.csv")
+
+```
+
+## Data
+
+```{r}
+# reading the data
+Office <- read.csv("office.csv")
+
+```
+
+## Inspecting the data
+
+```{r}
+str (Office)
+glimpse (Office)
+```
+
+
+## Descriptive analysis
+
+```{r}
+Descriptive_Office <- summary (Office)
+Descriptive_Office <-  as.data.frame(Descriptive_Office)
+```
+
+## Data wrangling
+
+```{r}
+Office <- Office %>% mutate(professional = factor(professional))
+```
+
+# Attitudinal variables
+```{r}
+Office_att <- as.data.frame (Office [ , 2:7])
+
+# Normalising the attitudinal variables
+Office_att_std <- scale (Office_att) %>% as.tibble ()
+summary (Office_att_std)
+```
+
+## Hierarchical clustering
+```{r}
+# computing the euclidean distance between the data points
+Dist <- dist (Office_att_std , method = "euclidean")
+# Printing the distances between the first 5 respondents
+as.matrix(Dist) [1:5 , 1:5]
+# Clustering the normalised data set using ward.D2
+set.seed(123)
+hc <- hclust (Dist , method = "ward.D2")
+# printing the cluster
+hc
+# plotting the dendogram
+plot (hc)
+
+# Dividing into a 6 cluster solution
+# drawing the rectangles highlighting the 6 clusters
+rect.hclust(hc , k = 6 , border = "blue")
+# Generating a 6 cluster solution
+hc_6 <- cutree(hc , k = 6)
+# Number of observations assigned to each cluster
+table (hc_6)
+
+# Calculating the means for each of the attitudinal variables per cluster
+
+hc_6_summary <- Office_att_std %>% 
+  mutate (hc_6 = factor(hc_6)) %>% 
+  group_by(hc_6) %>% 
+  mutate(n = n()) %>% 
+  summarise_all(~ mean (.x)) %>% 
+  mutate(prop = n / sum (n)) %>% 
+  print (width = Inf) 
+write.csv(hc_6_summary , "hc6_summary.csv")
+```
+
+
+## Data visualisation
+```{r}
+# Segment Profile plot
+hc_6_flex <- as.kcca(hc , Office_att_std , k = 6)
+# checking the concordance between the clusters generated using hclust and flexclust 
+table (hc_6 , clusters(hc_6_flex))
+# Plotting the segment profiles
+barchart(hc_6_flex , main = "Segment Profiles")
+```
+
+## Five cluster solution
+```{r}
+# Plotting the dendrogram again
+plot (hc)
+
+# drawing rectangles around the branches with k = 5
+rect.hclust(hc , k = 5, border = "blue")
+
+# Creating a 5 cluster solution
+hc_5 <- cutree(hc , k = 5)
+# Number of observations assigned to each cluster
+table (hc_5)
+
+# Calculating the means for each of the attitudinal variables per cluster
+
+hc_5_summary <- Office_att_std %>% 
+  mutate (hc_5 = factor(hc_5)) %>% 
+  group_by(hc_5) %>% 
+  mutate(n = n()) %>% 
+  summarise_all(~ mean (.x)) %>% 
+  mutate(prop = n / sum (n)) %>% 
+  print (width = Inf) 
+write.csv(hc_5_summary , "hc5_summary.csv")
+```
+
+
+## Plotting
+
+```{r}
+# Segment Profile plot
+hc_5_flex <- as.kcca(hc , Office_att_std , k = 5)
+# checking the concordance between the clusters generated using hclust and flexclust 
+table (hc_5 , clusters(hc_5_flex))
+# Plotting the segment profiles
+barchart(hc_5_flex , main = "Segment Profiles")
+
+```
+
+# Adding the cluster assignment to the non-normalised dataset
+
+```{r}
+hc_5 <- factor (hc_5 , 
+                levels =  c (1 , 2 , 3 , 4 , 5) , 
+                labels = c ("Variety in Furniture HC" , "Cost HC" , "Returns HC" ,
+                            "Variety in All HC" , "Quality HC"))
+hc_5
+Office <- Office %>% 
+  mutate (hcluster_groups = hc_5)
+str(Office)
+```
+
+
+## Segment targetting
+
+```{r}
+# Demographics
+hc_target <- Office %>% 
+  tabyl(hcluster_groups , professional) %>% 
+  adorn_totals(c ("row" , "col")) %>% 
+  adorn_percentages("row") %>% 
+  adorn_pct_formatting(digits = 2) %>% 
+  adorn_ns()
+hc_target
+```
+
+
+
+## K-Means clustering
+```{r}
+set.seed (123)
+
+kmeans <- kmeans (Office_att_std , 
+                  centers = 5 , 
+                  iter.max = 1000 , 
+                  nstart = 100
+                  )
+
+# Printing the cluster object
+kmeans
+# Number of observations in each cluster
+table(kmeans$cluster)
+kmeans_centers <- kmeans$centers
+
+write.csv (kmeans_centers , "kmeans.csv")
+
+kmeans_5 <- factor (kmeans$cluster , 
+                levels =  c (1 , 2 , 3 , 4 , 5) , 
+                labels = c ("Cost KM" , "Returns KM" , "Variety in All KM" ,
+                             "Quality KM" , "Variety in Furniture KM"))
+```
+
+
+## Results Comparison
+```{r}
+Office <- Office %>% mutate (kmeans_5 = kmeans_5)
+
+kmeans_target <- Office %>% 
+  tabyl(kmeans_5 , professional) %>% 
+  adorn_totals(c ("row" , "col")) %>% 
+  adorn_percentages("row") %>% 
+  adorn_pct_formatting(digits = 2) %>% 
+  adorn_ns()
+kmeans_target
+
+write.csv(hc_target , "hc_target.csv")
+
+write.csv(kmeans_target , "kmeans_target.csv")
+```
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+----
+
